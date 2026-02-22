@@ -44,9 +44,13 @@ pub struct LavalinkPlayerVoiceOptions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackPlayOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub encoded: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub identifier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_data: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_track_id: Option<String>,
 }
 

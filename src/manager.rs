@@ -78,22 +78,25 @@ impl LavalinkManager {
     }
     
     pub async fn voice_server_update(&self, guild_id: &str, endpoint: &str, session_id: &str, token: &str) -> Result<(), String> {
-        let mut players = self.players.write().await;
-        if let Some(player) = players.get_mut(guild_id) {
-            player.voice_state.server_deaf = false; 
+        let update_data = crate::types::player::LavalinkPlayOptions {
+            voice: Some(crate::types::player::LavalinkPlayerVoiceOptions {
+                endpoint: Some(endpoint.to_string()),
+                session_id: Some(session_id.to_string()),
+                token: Some(token.to_string()),
+            }),
+            ..Default::default()
+        };
 
-            let update_data = crate::types::player::LavalinkPlayOptions {
-                voice: Some(crate::types::player::LavalinkPlayerVoiceOptions {
-                    endpoint: Some(endpoint.to_string()),
-                    session_id: Some(session_id.to_string()),
-                    token: Some(token.to_string()),
-                }),
-                ..Default::default()
-            };
-
-            player.node.update_player(guild_id, false, &update_data).await.map(|_| ())
-        } else {
-            Err(format!("Player for guild {} not found during voice server update", guild_id))
-        }
+        let node = {
+            let mut players = self.players.write().await;
+            if let Some(player) = players.get_mut(guild_id) {
+                player.voice_state.server_deaf = false; 
+                player.node.clone()
+            } else {
+                return Err(format!("Player for guild {} not found during voice server update", guild_id));
+            }
+        };
+        
+        node.update_player(guild_id, false, &update_data).await.map(|_| ())
     }
 }
