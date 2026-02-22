@@ -64,7 +64,7 @@ pub struct LavalinkPlayerState {
     pub time: i64,
     pub position: i64,
     pub connected: bool,
-    pub ping: i64,
+    pub ping: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
