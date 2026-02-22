@@ -145,6 +145,14 @@ impl Player {
             }
         }
 
+        // Auto-shift from tracks if current is None
+        if self.queue.current.is_none() && !self.queue.tracks.is_empty() {
+            let first = self.queue.tracks.remove(0);
+            if let crate::types::queue::QueueTrack::Resolved(t) = first {
+                self.queue.current = Some(t);
+            }
+        }
+
         // Play from queue
         if self.queue.current.is_none() {
             return Err("There is no Track in the Queue, nor provided in the PlayOptions".to_string());
