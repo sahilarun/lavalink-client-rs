@@ -51,9 +51,9 @@ pub enum PlayerEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LavalinkPlayerVoice {
-    pub token: String,
-    pub endpoint: String,
-    pub session_id: String,
+    pub token: Option<String>,
+    pub endpoint: Option<String>,
+    pub session_id: Option<String>,
     pub connected: Option<bool>,
     pub ping: Option<i64>,
 }
@@ -139,7 +139,6 @@ impl SearchResult {
                 .iter()
                 .filter_map(|v| serde_json::from_value(v.clone()).ok())
                 .collect(),
-            // Playlist embeds tracks inside data.tracks
             serde_json::Value::Object(map) => {
                 if let Some(t) = map.get("tracks") {
                     if let serde_json::Value::Array(arr) = t {
