@@ -140,6 +140,7 @@ impl SearchResult {
                 .filter_map(|v| serde_json::from_value(v.clone()).ok())
                 .collect(),
             serde_json::Value::Object(map) => {
+                // If it's a playlist object containing a "tracks" array
                 if let Some(t) = map.get("tracks") {
                     if let serde_json::Value::Array(arr) = t {
                         return arr
@@ -148,6 +149,14 @@ impl SearchResult {
                             .collect();
                     }
                 }
+                
+                // If the data object itself is a single track (Lavalink v4 `loadType="track"`)
+                if self.load_type == "track" {
+                    if let Ok(track) = serde_json::from_value(self.data.clone()) {
+                        return vec![track];
+                    }
+                }
+                
                 vec![]
             }
             _ => vec![],
