@@ -86,70 +86,73 @@ impl LavalinkNode {
     }
 
     pub async fn connect(node_arc: Arc<Self>, user_id: String, client_name: String) -> Result<(), String> {
-        let ws_url = format!("{}/v4/websocket", node_arc.get_ws_url());
-        
-        let mut request = ws_url.into_client_request().map_err(|e| e.to_string())?;
-        
-        let headers = request.headers_mut();
-        headers.insert("Authorization", HeaderValue::from_str(&node_arc.options.authorization).unwrap());
-        headers.insert("User-Id", HeaderValue::from_str(&user_id).unwrap());
-        headers.insert("Client-Name", HeaderValue::from_str(&client_name).unwrap());
-        
-        let current_session = node_arc.session_id.read().await.clone();
-        if let Some(session_id) = current_session {
-            headers.insert("Session-Id", HeaderValue::from_str(&session_id).unwrap());
-        }
-
-        let (ws_stream, _) = connect_async(request)
-            .await
-            .map_err(|e| format!("Failed to connect to Websocket: {}", e))?;
-            
-        info!("Connected to Lavalink Node {}", node_arc.id);
-        *node_arc.connected.write().await = true;
-
-        let (mut write, mut read) = ws_stream.split();
-        
         let n = node_arc.clone();
+        
         tokio::spawn(async move {
-            while let Some(msg) = read.next().await {
-                match msg {
-                    Ok(Message::Text(text)) => {
-                        debug!("Received WebSocket message: {}", text);
-                        match serde_json::from_str::<LavalinkMessage>(&text) {
-                            Ok(lavalink_msg) => {
-                                match &lavalink_msg {
-                                    LavalinkMessage::Ready { session_id, .. } => {
-                                        *n.session_id.write().await = Some(session_id.clone());
-                                        info!("Lavalink Node {} is READY with session {}", n.id, session_id);
+            loop {
+                let ws_url = format!("{}/v4/websocket", n.get_ws_url());
+                let request = ws_url.into_client_request();
+                
+                if let Ok(mut request) = request {
+                    let headers = request.headers_mut();
+                    headers.insert("Authorization", HeaderValue::from_str(&n.options.authorization).unwrap());
+                    headers.insert("User-Id", HeaderValue::from_str(&user_id).unwrap());
+                    headers.insert("Client-Name", HeaderValue::from_str(&client_name).unwrap());
+                    
+                    if let Some(session_id) = n.session_id.read().await.clone() {
+                        headers.insert("Session-Id", HeaderValue::from_str(&session_id).unwrap());
+                    }
+
+                    match connect_async(request).await {
+                        Ok((ws_stream, _)) => {
+                            info!("Connected to Lavalink Node {}", n.id);
+                            *n.connected.write().await = true;
+
+                            let (mut _write, mut read) = ws_stream.split();
+                            
+                            while let Some(msg) = read.next().await {
+                                match msg {
+                                    Ok(Message::Text(text)) => {
+                                        debug!("Received WebSocket message: {}", text);
+                                        match serde_json::from_str::<LavalinkMessage>(&text) {
+                                            Ok(lavalink_msg) => {
+                                                match &lavalink_msg {
+                                                    LavalinkMessage::Ready { session_id, .. } => {
+                                                        *n.session_id.write().await = Some(session_id.clone());
+                                                        info!("Lavalink Node {} is READY with session {}", n.id, session_id);
+                                                    },
+                                                    LavalinkMessage::Stats(stats) => {
+                                                        *n.stats.write().await = Some(stats.clone());
+                                                    },
+                                                    _ => {}
+                                                }
+                                                let _ = n.event_sender.send(lavalink_msg).await;
+                                            },
+                                            Err(e) => warn!("Failed to deserialize Lavalink message: {} | Data: {}", e, text),
+                                        }
                                     },
-                                    LavalinkMessage::Stats(stats) => {
-                                        *n.stats.write().await = Some(stats.clone());
+                                    Ok(Message::Close(c)) => {
+                                        warn!("WebSocket closed by node {}: {:?}", n.id, c);
+                                        break;
+                                    },
+                                    Err(e) => {
+                                        warn!("WebSocket error on node {}: {}", n.id, e);
+                                        break;
                                     },
                                     _ => {}
                                 }
-                                
-                                // Forward to the Manager event bus
-                                let _ = n.event_sender.send(lavalink_msg).await;
-                            },
-                            Err(e) => {
-                                error!("Failed to deserialize Lavalink message: {} | Data: {}", e, text);
                             }
+                            *n.connected.write().await = false;
+                            warn!("Event loop terminated for node {}. Reconnecting in 5s...", n.id);
+                        },
+                        Err(e) => {
+                            error!("Failed to connect to Websocket ({}): {}. Retrying in 5s...", n.id, e);
                         }
-                    },
-                    Ok(Message::Close(c)) => {
-                        warn!("WebSocket closed by node {}: {:?}", n.id, c);
-                        *n.connected.write().await = false;
-                        break;
-                    },
-                    Err(e) => {
-                        error!("WebSocket error on node {}: {}", n.id, e);
-                        *n.connected.write().await = false;
-                        break;
-                    },
-                    _ => {}
+                    }
                 }
+                
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
-            warn!("Event loop terminated for node {}", n.id);
         });
 
         Ok(())
